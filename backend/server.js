@@ -6,14 +6,6 @@ const db = require("./db");
 const app = express();
 const PORT = 3000;
 
-// PATCH Whitelist
-const PATCH_ALLOWED_FIELDS = [
-  "name",
-  "purchase_date",
-  "metal"
-];
-
-
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -58,29 +50,58 @@ app.post("/api/portfolio", (req, res) => {
       notes = null
     } = req.body;
 
-    // --- Minimal-Validierung ---
+    // --- Validation: existence & datatype ---
     if (
       !name ||
       !metal ||
       !purchase_date ||
       quantity == null ||
-      price_per_unit == null
+      price_per_unit == null ||
+
+      gross_weight_g == null ||
+      purity == null
+
     ) {
       return res.status(400).json({
-        error: "Missing required fields"
+        error: "Missing required fields", 
+          required: [
+            "name",
+            "metal",
+            "quantity",
+            "price_per_unit",
+            "gross_weight_g",
+            "purity"
+          ]
       });
     }
 
+    if (
+      Number(quantity) <= 0 ||
+      Number(price_per_unit) <= 0 ||
+      Number(gross_weight_g) <= 0 ||
+      Number(purity) <= 0 ||
+      Number(purity) > 1
+    ) {
+      return res.status(400).json({
+        error: "Invalid numeric values"
+      });
+    }
+
+
     const created_at = new Date().toISOString();
 
-    const total_price =
-      Number(quantity) * Number(price_per_unit) + Number(extra_costs || 0);
+    // --- Calculations ---
+    const { calculatePortfolioFields } = require("./portfolio.logic");
 
-    let fine_weight_g = null;
-    if (gross_weight_g != null && purity != null) {
-      fine_weight_g =
-        Number(gross_weight_g) * Number(purity) * Number(quantity);
-    }
+    const { total_price, fine_weight_g } =
+      calculatePortfolioFields({
+        quantity,
+        price_per_unit,
+        extra_costs,
+        gross_weight_g,
+        purity,
+      });
+
 
     const stmt = db.prepare(`
       INSERT INTO portfolio (
@@ -119,9 +140,7 @@ app.post("/api/portfolio", (req, res) => {
       notes
     );
 
-    const inserted = db
-      .prepare("SELECT * FROM portfolio WHERE id = ?")
-      .get(result.lastInsertRowid);
+    const inserted = db.prepare("SELECT * FROM portfolio WHERE id = ?").get(result.lastInsertRowid);
 
     res.status(201).json(inserted);
 
@@ -131,32 +150,23 @@ app.post("/api/portfolio", (req, res) => {
   }
 });
 
-// PUT-Answer
-/*app.put("/api/portfolio/:id", (req, res) => {
-  const { id } = req.params;
-  const { name, purchase_date, metal } = req.body;
+// PATCH Whitelist
+const PATCH_ALLOWED_FIELDS = [
+  // Pflicht / berechnungsrelevant
+  "name",
+  "metal",
+  "quantity",
+  "price_per_unit",
+  "gross_weight_g",
+  "purity",
+  "extra_costs",
 
-  if (!name || !purchase_date || !metal) {
-    return res.status(400).json({
-      error: "PUT requires all fields: name, purchase_date, metal"
-    });
-  }
-
-  const result = db.prepare(`
-    UPDATE portfolio
-    SET
-      name = ?,
-      purchase_date = ?,
-      metal = ?
-    WHERE id = ?
-  `).run(name, purchase_date, metal, id);
-
-  if (result.changes === 0) {
-    return res.status(404).json({ error: "Portfolio entry not found" });
-  }
-
-  res.json({ success: true });
-});*/
+  // Optional
+  "purchase_date",
+  "dealer",
+  "collector_value",
+  "notes"
+];
 
 // PATCH-Answer
 app.patch("/api/portfolio/:id", (req, res) => {
@@ -169,31 +179,65 @@ app.patch("/api/portfolio/:id", (req, res) => {
     return res.status(400).json({ error: "No fields to update" });
   }
 
-  // PATCH WHitelist
-  const invalidFields = keys.filter(
-    key => !PATCH_ALLOWED_FIELDS.includes(key)
-  );
+    // PATCH-Whitelist Validatopn
+    const invalidFields = keys.filter(key => !PATCH_ALLOWED_FIELDS.includes(key));
 
-    if (invalidFields.length > 0) {
-      return res.status(400).json({
-        error: "invalid fields in request",
-        invalidFields
-      });
-    }
+      if (invalidFields.length > 0) {
+        return res.status(400).json({
+          error: "invalid fields in request",
+          invalidFields
+        });
+      }
+
+      // Load existing data
+      const existing = db.prepare("SELECT * FROM portfolio WHERE id = ?").get(id);
+
+      if (!existing) {
+        return res.status(404).json({ error: "Portfolio entry not found" });
+      }
+
+      // merge data
+      const merged = { ...existing, ...fields };
+
+      // validate merged data - existence & datatype
+      if (
+        !merged.name ||
+        !merged.metal ||
+        merged.quantity == null ||
+        merged.price_per_unit == null ||
+        merged.gross_weight_g == null ||
+        merged.purity == null
+      ) {
+        return res.status(400).json({
+          error: "Update would result in invalid state"
+        });
+      }
+
+      if (
+        Number(merged.quantity) <= 0 ||
+        Number(merged.price_per_unit) <= 0 ||
+        Number(merged.gross_weight_g) <= 0 ||
+        Number(merged.purity) <= 0 ||
+        Number(merged.purity) > 1
+      ) {
+        return res.status(400).json({
+          error: "Invalid numeric values after update"
+        });
+      }
+
+      // Calculations (not yet completed)
+      const { calculatePortfolioFields } = require("./portfolio.logic");
+      const { total_price, fine_weight_g } = calculatePortfolioFields(merged);
+
+      const updateFields = { ...fields, total_price, fine_weight_g };
+
+      const updateKeys = Object.keys(updateFields);
 
   // Update
-  const setClause = keys.map(key => `${key} = ?`).join(", ");
-  const values = keys.map(key => fields[key]);
+  const setClause = updateKeys.map(k => `${k} = ?`).join(", ");
+  const values = updateKeys.map(k => updateFields[k]);
 
-  const result = db.prepare(`
-    UPDATE portfolio
-    SET ${setClause}
-    WHERE id = ?
-  `).run(...values, id);
-
-  if (result.changes === 0) {
-    return res.status(404).json({ error: "Portfolio entry not found" });
-  }
+  db.prepare(`UPDATE portfolio SET ${setClause} WHERE id = ?`).run(...values, id);
 
   res.json({ success: true });
 });
