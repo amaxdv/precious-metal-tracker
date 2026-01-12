@@ -3,12 +3,17 @@ const express = require('express');
 const cors = require('cors');
 const db = require("./db");
 
+const cheerio = require('cheerio');
+console.log('cheerio loaded:', typeof cheerio.load);
+
 const app = express();
 const PORT = 3000;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+
 
 // Test portfolio data 001
 /*const existing = db.prepare("SELECT * FROM portfolio").get();
@@ -278,6 +283,10 @@ app.delete("/api/portfolio/:id", (req, res) => {
     createdAt: new Date().toISOString()
   });
 });*/
+
+
+
+
 
 // ++ Server Start ++
 app.listen(PORT, () => {
