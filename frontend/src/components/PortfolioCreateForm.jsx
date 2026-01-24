@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { createPortfolioEntry } from "../api/portfolio";
+import { createPortfolioEntry } from "../api/portfolio.api";
 
 function PortfolioCreateForm({ onCreated }) {
     const [name, setName] = useState("");

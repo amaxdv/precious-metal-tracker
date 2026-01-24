@@ -38,6 +38,8 @@ import { useState } from "react";
 import PortfolioList from "./components/PortfolioList";
 import PortfolioCreateForm from "./components/PortfolioCreateForm";
 import PortfolioEditForm from "./components/PortfolioEditForm";
+import SpotPricePanel from "./components/SpotPricePanel";
+import PortfolioSummary from './components/PortfolioSummary';
 import './App.css'
 
 
@@ -71,8 +73,17 @@ function App() {
     setEditingEntry(null);
   }
 
+  
   return (
     <div>
+      <h1>Spotprice</h1>
+
+      <SpotPricePanel />
+
+      <h1>Dashboard</h1>
+
+      <PortfolioSummary />
+
       <h1>Mein Portfolio</h1>
 
       <PortfolioCreateForm onCreated={handleCreated} />

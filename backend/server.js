@@ -4,7 +4,7 @@ const cors = require('cors');
 const db = require("./db");
 
 const cheerio = require('cheerio');
-console.log('cheerio loaded:', typeof cheerio.load);
+//console.log('cheerio loaded:', typeof cheerio.load);
 
 const app = express();
 const PORT = 3000;
@@ -284,7 +284,100 @@ app.delete("/api/portfolio/:id", (req, res) => {
   });
 });*/
 
+// ++ Scraping (fixed price) ++
+app.get('/api/spot/silver', async (req, res) => {
+  /* // ++ Dummy ++
+  res.json({
+    metal: 'silver',
+    price_eur_per_g: 0.75,
+    source: 'dummy',
+    timestamp: new Date().toISOString()
+  });
+  */
 
+   try {
+    // ++ Daten laden ++
+    const response = await fetch('https://www.gold.de/kurse/silberpreis/', {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+          '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept-Language': 'de-DE,de;q=0.9,en;q=0.8'
+      }
+    });
+    
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const html = await response.text();
+    
+    // ++ Daten Selektieren ++
+    const $ = cheerio.load(html);
+
+    // Selector 
+    const rawPrice = $('div.em_preis_ml.au_silber_eur').first().text();
+
+    if (!rawPrice) {
+      throw new Error('Spotpreis nicht gefunden');
+    }
+
+    // ++ Daten verarbeiten ++
+
+    // Beispiel: "0,92 €"
+    const normalized = rawPrice.replace('EUR', '').replace(',', '.').trim();
+
+    const price = Number(normalized);
+
+    if (Number.isNaN(price)) {
+      throw new Error(`Ungültiger Preiswert: ${rawPrice}`);
+    }
+
+    const priceConvert = price / 31.103;
+
+    // ++ load ++
+
+    res.json({
+      metal: 'silver',
+      price_eur_per_g: priceConvert,
+      source: 'gold.de',
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (err) {
+    console.error('Scraping error:', err.message);
+
+    res.status(500).json({
+      error: 'Scraping failed',
+      details: err.message
+    });
+  }
+});
+
+// Orchestrate Calculations
+app.get('/api/portfolio/summary/metals', async (req, res) => {
+  
+  try {
+    // Data from SQL
+    const entries = db.prepare('SELECT * FROM portfolio').all();
+
+    // spotprice
+    const spotResponse = await fetch('http://localhost:3000/api/spot/silver');
+    const spotData = await spotResponse.json();
+
+    // call calculation and give Arguments
+    const { calculateMetalSummary } = require('./portfolio.logic');
+    const summary = calculateMetalSummary(entries, 'Silber', spotData.price_eur_per_g);
+
+    // response result as json
+    res.json(summary);
+
+  } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: 'Summary calculation failed' });
+  }
+});
 
 
 

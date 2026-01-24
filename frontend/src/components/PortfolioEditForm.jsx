@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { updatePortfolioEntry } from "../api/portfolio";
+import { updatePortfolioEntry } from "../api/portfolio.api";
 
 function PortfolioEditForm({ entry, onCancel, onUpdated }) {
     const [name, setName] = useState(entry.name);

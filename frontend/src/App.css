@@ -40,3 +40,16 @@
 .read-the-docs {
   color: #888;
 }
+
+/* === Custom CSS === */
+/* ++ Portfolio Summary ++ */
+.portfolio-summary {
+  display: flex;
+  gap: 2rem;
+}
+
+.portfolio-summary section {
+  border: 1px solid #ccc;
+  padding: 1rem;
+  flex: 1;
+}

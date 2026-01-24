@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"; 
-import { fetchPortfolio } from "../api/portfolio";
-import { deletePortfolioEntry } from "../api/portfolio";
+import { fetchPortfolio } from "../api/portfolio.api";
+import { deletePortfolioEntry } from "../api/portfolio.api";
 
 
 export default function PortfolioList({ refreshKey, onEdit }) {
