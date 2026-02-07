@@ -53,8 +53,29 @@ function calculateMetalSummary(entries, metal, spotPricePerGram) {
   };
 }
 
+function calculateProfitLoss (metalSummaries) {
+  const total_asset_value = metalSummaries.reduce(
+    (sum, m) => sum + m.asset_value,
+    0
+  );
+
+  const total_invested = metalSummaries.reduce(
+    (sum, m) => sum + m.sum_total_price,
+    0
+  );
+
+  const total_net_value = total_asset_value - total_invested;
+
+  return {
+    total_asset_value,
+    total_invested,
+    total_net_value
+  };
+}
+
 module.exports = {
   calculatePortfolioFields,
-  calculateMetalSummary
+  calculateMetalSummary,
+  calculateProfitLoss
 };
 

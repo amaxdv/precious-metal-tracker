@@ -268,110 +268,154 @@ app.delete("/api/portfolio/:id", (req, res) => {
   });
 });
 
-//Test 001 - einfaches select & get
-/*app.get("/api/portfolio", (req, res) => {
-  const portfolio = db.prepare("SELECT * FROM portfolio").get();
-  res.json(portfolio);
+// +++ All Metals & Unit Factors+++
+const METALS = {
+  gold: {
+    label: 'Gold',
+    url: 'https://www.gold.de/kurse/goldpreis/',
+    selector: 'div.em_preis_ml.au_gold_eur',
+    unit: 'oz',
+  },
+  
+  silver: {
+    label: 'Silber',
+    url: 'https://www.gold.de/kurse/silberpreis/',
+    selector: 'div.em_preis_ml.au_silber_eur',
+    unit: 'oz',
+  },
+  
+  copper: {
+    label: 'Kupfer',
+    url: 'https://www.gold.de/kurse/kupferpreis/',
+    selector: 'div.em_preis_ml.au_kupfer_eur',
+    unit: 't',
+  }
+};
 
-});*/
+  const UNIT_FACTOR = {
+    g: 1,
+    oz: 31.1035,
+    kg: 1000,
+    t: 1_000_000
+  };
 
-// Data Connection Test 000
-/*app.get("/api/portfolio", (req, res) => {
-  res.json({
-    name: "Test-Depot",
-    assets: [],
-    createdAt: new Date().toISOString()
-  });
-});*/
+  function convertUnitToGram(price, unit) {
+    const factor = UNIT_FACTOR[unit];
 
-// ++ Scraping (fixed price) ++
-app.get('/api/spot/silver', async (req, res) => {
-  /* // ++ Dummy ++
-  res.json({
-    metal: 'silver',
-    price_eur_per_g: 0.75,
-    source: 'dummy',
-    timestamp: new Date().toISOString()
-  });
-  */
-
-   try {
-    // ++ Daten laden ++
-    const response = await fetch('https://www.gold.de/kurse/silberpreis/', {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-          '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept-Language': 'de-DE,de;q=0.9,en;q=0.8'
+      if (!factor) {
+        throw new Error(`Unbekannte Einheit: ${unit}`);
       }
-    });
-    
-    
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+
+      const eurPerGram = price / factor;
+
+      return Number(eurPerGram.toFixed(2));
+    };
+
+
+// +++ Scraping Function +++
+async function scrapeSpotPrice(metalKey) {
+  const config = METALS[metalKey];
+  
+  if (!config) {
+    throw new Error('Unbekanntes Metall');
+  }
+
+  const response = await fetch(config.url, {
+    headers: {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
+        '(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'de-DE,de;q=0.9,en;q=0.8'
     }
+  });
 
-    const html = await response.text();
-    
-    // ++ Daten Selektieren ++
-    const $ = cheerio.load(html);
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
 
-    // Selector 
-    const rawPrice = $('div.em_preis_ml.au_silber_eur').first().text();
+  // load Data
+  const html = await response.text();
+  const $ = cheerio.load(html);
 
+  // search by selector
+  const rawPrice = $(config.selector).first().text();
     if (!rawPrice) {
       throw new Error('Spotpreis nicht gefunden');
     }
 
-    // ++ Daten verarbeiten ++
-
-    // Beispiel: "0,92 €"
-    const normalized = rawPrice.replace('EUR', '').replace(',', '.').trim();
+  //process data
+  const normalized = rawPrice
+    .replace(/\./g, '') // removing thousands seperator
+    .replace(',', '.') // switching decimal seperator
+    .replace('EUR', '') // removing EUR
+    .trim(); // removing spaces
 
     const price = Number(normalized);
+      if (Number.isNaN(price)) {
+        throw new Error(`Ungültiger Preiswert: ${rawPrice}`);
+      }
 
-    if (Number.isNaN(price)) {
-      throw new Error(`Ungültiger Preiswert: ${rawPrice}`);
-    }
+      const unit = METALS[metalKey].unit;
 
-    const priceConvert = price / 31.103;
+        const pricePerGram = convertUnitToGram(price, unit);
 
-    // ++ load ++
+  // return data
+  return {
+    metal: metalKey,
+    price_eur_per_g: pricePerGram,
+    unit,
+    source: 'gold.de',
+    timestamp: new Date().toISOString()
+  };
+}
 
-    res.json({
-      metal: 'silver',
-      price_eur_per_g: priceConvert,
-      source: 'gold.de',
-      timestamp: new Date().toISOString()
-    });
+// +++ Route with function call +++
+app.get('/api/spot/:metal', async (req, res) => {
+  try {
+    const result = await scrapeSpotPrice(req.params.metal);
+      res.json(result);
 
   } catch (err) {
     console.error('Scraping error:', err.message);
-
-    res.status(500).json({
-      error: 'Scraping failed',
-      details: err.message
-    });
+      res.status(500).json({
+        error: 'Scraping failed',
+        details: err.message
+      });
   }
 });
+
 
 // Orchestrate Calculations
 app.get('/api/portfolio/summary/metals', async (req, res) => {
   
-  try {
+  try { 
     // Data from SQL
     const entries = db.prepare('SELECT * FROM portfolio').all();
 
-    // spotprice
-    const spotResponse = await fetch('http://localhost:3000/api/spot/silver');
-    const spotData = await spotResponse.json();
+    const { calculateMetalSummary, calculateProfitLoss } = require('./portfolio.logic');
 
-    // call calculation and give Arguments
-    const { calculateMetalSummary } = require('./portfolio.logic');
-    const summary = calculateMetalSummary(entries, 'Silber', spotData.price_eur_per_g);
+    const summaries = [];
+
+    for (const [metalKey, metalConfig] of Object.entries(METALS)) {
+      const spotResponse = await fetch(`http://localhost:3000/api/spot/${metalKey}`
+    );
+
+      if (!spotResponse.ok) continue;
+
+      const spotData = await spotResponse.json();
+
+      const calcResult = calculateMetalSummary(entries, metalConfig.label, spotData.price_eur_per_g);
+
+      summaries.push(calcResult);
+    }
+
+    const totals = calculateProfitLoss(summaries);
 
     // response result as json
-    res.json(summary);
+    res.json({
+      metalResults: summaries,
+      totalResults: totals
+    });
 
   } catch (err) {
       console.error(err);
